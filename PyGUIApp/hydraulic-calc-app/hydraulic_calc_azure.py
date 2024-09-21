@@ -21,32 +21,48 @@ class HydraulicCalculation:
         self.viscosity = viscosity
         self.density = density
         self.gravity = 9.81
+        self.flow_regime = None
+        self.area = 0
+        self.velocity = 0
 
         # Define symbols
-        self.D, self.L, self.Q, self.e, self.mu, self.f, self.h, self.g = symbols('D,L,Q,e,mu,f,h,g')
+        self.D, self.L, self.Q, self.e, self.mu, self.f, self.h, self.g, self.V, self.ρ, self.P = symbols('D,L,Q,e,mu,f,h,g,V,ρ,P')
 
-        # Define the Darcy-Weisbach formula (head loss)
-        self.pressure_drop_formula = (self.f * self.L / self.D) * ((self.Q ** 2) / (sp.pi ** 2 * self.D ** 4 * self.g))
-        #self.pressure_drop_formula = self.f * (self.L / self.D) * (self.ρ * self.v ** 2 / 2)
-        self.eq = sp.Eq(self.h, self.pressure_drop_formula)
+        # Calculate pipe area
+        self.area = self.calculate_pipe_area()
+
+        # Define the Darcy-Weisbach formula (pressure drop)
+        self.pressure_drop_formula = self.f * (self.L / self.D) * (self.ρ * self.V ** 2 / 2)
+
+        self.eq = sp.Eq(self.P, self.pressure_drop_formula)
 
     def calculate_velocity(self):
         """Calculate flow velocity based on the flow rate and diameter."""
         return (4 * self.flow_rate) / (sp.pi * self.diameter ** 2)
 
+    def calculate_pipe_area(self):
+        """Calculate the area of the pipe based on input diameter"""
+        return math.pi * (self.diameter ** 2) / 4
+
     def calculate_reynolds_number(self):
         """Calculate the Reynolds number based on velocity, diameter, and viscosity."""
-        velocity = self.calculate_velocity()
-        reynolds_number = (self.density * velocity * self.diameter) / self.viscosity
+        self.velocity = self.calculate_velocity().evalf()
+        reynolds_number = (self.density * self.velocity * self.diameter) / self.viscosity
         return reynolds_number
 
     def calculate_friction_factor(self):
         """Determine friction factor based on Reynolds number and pipe roughness."""
         reynolds_number = self.calculate_reynolds_number()
 
-        if reynolds_number < 2300:
+        if reynolds_number < 2100:
             # Laminar flow
             friction_factor = 64 / reynolds_number
+            self.flow_regime = "Laminar"
+        elif 2100 < reynolds_number <= 4000:
+            A = 2.457 * math.log(1 / ((7 / reynolds_number) ** 0.9 + 0.27 * self.roughness / self.diameter))**16
+            B = (37350 / reynolds_number) ** 16
+            friction_factor = 8 * ((8 / reynolds_number) ** 12 + 1 / ((A + B) ** 1.5)) ** (1 / 12)
+            self.flow_regime = "Transient"
         else:
             # Turbulent flow, use Colebrook-White equation
             def colebrook(f):
@@ -55,6 +71,7 @@ class HydraulicCalculation:
 
             # Use numerical method to solve for f (initial guess 0.02)
             friction_factor = self.newton_raphson(colebrook, 0.02)
+            self.flow_regime = "Turbulent"
 
         return friction_factor
 
@@ -78,16 +95,15 @@ class HydraulicCalculation:
         try:
             friction_factor = self.calculate_friction_factor()
 
-            # Substitute user inputs and solve for head loss 'h'
+            # Substitute user inputs and solve for pressure drop
             pressure_drop_equation = self.eq.subs({
                 self.D: self.diameter,
                 self.L: self.length,
-                self.Q: self.flow_rate,
+                self.V: self.velocity,
                 self.f: friction_factor,
-                self.e: self.roughness,
-                self.g: self.gravity
+                self.ρ: self.density
             })
-            h_value = solve(pressure_drop_equation, self.h)
+            h_value = solve(pressure_drop_equation, self.P)
 
             # Check if the solution exists and return it
             if h_value:
@@ -110,7 +126,6 @@ class HydraulicCalculation:
 
         # Convert SymPy expressions to numeric values
         reynolds_number = self.calculate_reynolds_number().evalf()
-        velocity = self.calculate_velocity().evalf()
 
         # Convert friction_factor to float if it's a float already
         if isinstance(friction_factor, sp.Basic):
@@ -120,12 +135,14 @@ class HydraulicCalculation:
         content = [
             f"Diameter: {self.diameter} m",
             f"Length: {self.length} m",
-            f"Flow Rate: {self.flow_rate} m^3/s",
+            f"Volumetric Flow Rate: {self.flow_rate} m^3/s",
             f"Roughness: {self.roughness} m",
             f"Viscosity: {self.viscosity} Pa.s",
             f"Density: {self.density} kg/m³",
-            f"Velocity: {velocity:.2f} m/s",
+            f"Velocity: {self.velocity:.2f} m/s",
+            f"Pipe Area: {self.area:.3f} m^2",
             f"Reynolds Number: {reynolds_number:.2f}",
+            f"Flow Regime: {self.flow_regime}",
             f"Friction Factor: {friction_factor:.5f}",
             f"",
             f"---------------------------------",
@@ -217,7 +234,7 @@ class ReportGeneratorApp:
         self.length_entry = ttk.Entry(self.root)
         self.length_entry.grid(row=1, column=1)
 
-        ttk.Label(self.root, text="Flow Rate (m^3/s):").grid(row=2, column=0)
+        ttk.Label(self.root, text="Volumetric Flow Rate (m^3/s):").grid(row=2, column=0)
         self.flow_rate_entry = ttk.Entry(self.root)
         self.flow_rate_entry.grid(row=2, column=1)
 
