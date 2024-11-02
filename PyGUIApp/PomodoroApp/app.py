@@ -86,9 +86,9 @@ class PomodoroTimer(tk.Tk):
         # configure container to grow to take up full width and center
         container.columnconfigure(0, weight=1)
         
-        timer_frame = Timer(container, self, lambda: self.show_frame(Settings))
+        timer_frame = Timer(container, self, show_settings=lambda: self.show_frame(Settings))
         timer_frame.grid(row=0, column=0, sticky='NSEW')
-        settings_frame = Settings(container, self, lambda: self.show_frame(Timer))
+        settings_frame = Settings(container, self, show_timer=lambda: self.show_frame(Timer))
         settings_frame.grid(row=0, column=0, sticky='NSEW')
         
         # Put the Timer and Settings frames in a dictionary to easier access using tkraise
@@ -105,6 +105,18 @@ class PomodoroTimer(tk.Tk):
     def show_frame(self, container):
         frame = self.frames[container]
         frame.tkraise()
+        
+        # To get timer to reset upon exiting from Settings
+        if container.__name__ == "Timer":
+            if not frame.timer_running:
+                frame.reset_timer()
+        
+        # The below is a simple solution for showing frames of different sizes
+        # uncomment it to get it to work
+        # for frame in self.frames.values():
+        #     frame.grid_remove()
+        # frame = self.frames[container]
+        # frame.grid()
         
 if __name__ == '__main__':
     app = PomodoroTimer()
